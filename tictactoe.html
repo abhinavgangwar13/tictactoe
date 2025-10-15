@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tic Tac Toe — 2 Player</title>
+  <style>
+    :root{
+      --bg: #0f172a;
+      --card: #0b1220;
+      --accent: #06b6d4;
+      --muted: #94a3b8;
+      --win: #10b981;
+      --lose: #ef4444;
+      --glass: rgba(255,255,255,0.03);
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071122 0%, #081225 60%);color:#e6eef8}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px}
+
+    .card{
+      width:360px;
+      max-width:95vw;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:14px;padding:18px;border:1px solid rgba(255,255,255,0.04);
+      box-shadow:0 6px 30px rgba(2,6,23,0.6);
+    }
+
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    header h1{font-size:18px;margin:0}
+    header small{color:var(--muted)}
+
+    .board{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:var(--glass);padding:10px;border-radius:10px}
+
+    .cell{
+      width:100%;padding-top:100%; /* square */position:relative;border-radius:8px;cursor:pointer;
+      background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.0));display:flex;align-items:center;justify-content:center;
+      transition:transform .12s ease, box-shadow .12s ease;
+      border:1px solid rgba(255,255,255,0.03);
+    }
+    .cell:active{transform:scale(.98)}
+    .cell.disabled{cursor:not-allowed;opacity:.9}
+    .cell .mark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:48px}
+
+    .status{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:12px}
+    .status .text{font-size:14px;color:var(--muted)}
+    .status .result{font-weight:700}
+
+    .controls{display:flex;gap:8px;margin-top:10px}
+    button{appearance:none;border:0;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,0.03);color:inherit;cursor:pointer}
+    button.primary{background:linear-gradient(90deg,var(--accent),#7c3aed);box-shadow:0 6px 18px rgba(7,12,26,0.6)}
+
+    .line{position:absolute;height:6px;background:var(--win);border-radius:6px;transform-origin:center}
+
+    footer{margin-top:12px;font-size:12px;color:var(--muted);text-align:center}
+
+    /* winner highlight overlay for diagonals/rows/cols */
+    .cell.win{background:linear-gradient(90deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));box-shadow:0 6px 18px rgba(16,185,129,0.06)}
+
+    @media (max-width:380px){.card{padding:12px}.cell .mark{font-size:36px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="application" aria-label="Tic Tac Toe two player game">
+      <header>
+        <div>
+          <h1>Tic Tac Toe</h1>
+          <small>Two players — take turns (X starts)</small>
+        </div>
+        <div>
+          <button id="newBtn" title="Restart game">New Game</button>
+        </div>
+      </header>
+
+      <main>
+        <div id="board" class="board" aria-live="polite"></div>
+
+        <div class="status">
+          <div class="text">Current: <span id="current">X</span></div>
+          <div class="text result" id="result">Game on</div>
+        </div>
+
+        <div class="controls">
+          <button id="undoBtn">Undo Last</button>
+          <button id="replayBtn" class="primary">Play Again</button>
+        </div>
+      </main>
+
+      <footer>
+        Tip: Click any empty cell. Occupied cells cannot be overwritten. Enjoy!
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    // Simple 2-player tic tac toe
+    (function(){
+      const boardEl = document.getElementById('board');
+      const currentEl = document.getElementById('current');
+      const resultEl = document.getElementById('result');
+      const newBtn = document.getElementById('newBtn');
+      const replayBtn = document.getElementById('replayBtn');
+      const undoBtn = document.getElementById('undoBtn');
+
+      const SIZE = 3;
+      let board = [];
+      let current = 'X';
+      let over = false;
+      let moves = []; // stack for undo
+
+      // winning combos as indices in flat array 0..8
+      const wins = [
+        [0,1,2],[3,4,5],[6,7,8], // rows
+        [0,3,6],[1,4,7],[2,5,8], // cols
+        [0,4,8],[2,4,6] // diagonals
+      ];
+
+      function createBoard(){
+        board = Array(9).fill('');
+        boardEl.innerHTML = '';
+        for(let i=0;i<9;i++){
+          const cell = document.createElement('button');
+          cell.className = 'cell';
+          cell.type = 'button';
+          cell.setAttribute('data-i', i);
+          cell.setAttribute('aria-label', `Cell ${Math.floor(i/3)+1} ${i%3+1}`);
+
+          const mark = document.createElement('span');
+          mark.className = 'mark';
+          mark.textContent = '';
+
+          cell.appendChild(mark);
+          cell.addEventListener('click', onCellClick);
+          boardEl.appendChild(cell);
+        }
+        updateStatus('Game on');
+        current = 'X';
+        currentEl.textContent = current;
+        over = false;
+        moves = [];
+      }
+
+      function onCellClick(e){
+        if(over) return; // game finished
+        const idx = Number(e.currentTarget.dataset.i);
+        if(board[idx]){
+          // already occupied — avoid overwriting
+          // add subtle feedback
+          e.currentTarget.classList.add('disabled');
+          setTimeout(()=> e.currentTarget.classList.remove('disabled'), 120);
+          return;
+        }
+
+        makeMove(idx, current);
+        // check for win/draw
+        const winInfo = checkWin();
+        if(winInfo){
+          handleWin(winInfo);
+          return;
+        }
+        if(board.every(v => v !== '')){
+          handleDraw();
+          return;
+        }
+
+        // switch player
+        current = current === 'X' ? 'O' : 'X';
+        currentEl.textContent = current;
+      }
+
+      function makeMove(idx, player){
+        board[idx] = player;
+        moves.push({idx, player});
+        const cell = boardEl.querySelector(`[data-i='${idx}']`);
+        const mark = cell.querySelector('.mark');
+        mark.textContent = player;
+      }
+
+      function checkWin(){
+        for(const combo of wins){
+          const [a,b,c] = combo;
+          if(board[a] && board[a] === board[b] && board[a] === board[c]){
+            return {combo, player: board[a]};
+          }
+        }
+        return null;
+      }
+
+      function handleWin(info){
+        over = true;
+        highlightWin(info.combo);
+        updateStatus(`Player ${info.player} wins!`);
+      }
+
+      function handleDraw(){
+        over = true;
+        updateStatus("It's a draw!");
+      }
+
+      function highlightWin(combo){
+        combo.forEach(i=>{
+          const cell = boardEl.querySelector(`[data-i='${i}']`);
+          cell.classList.add('win');
+        });
+      }
+
+      function updateStatus(text){
+        resultEl.textContent = text;
+      }
+
+      newBtn.addEventListener('click', ()=>{
+        if(confirm('Start a new game? This will reset current progress.')) createBoard();
+      });
+
+      replayBtn.addEventListener('click', ()=>{
+        createBoard();
+      });
+
+      undoBtn.addEventListener('click', ()=>{
+        if(moves.length===0 || over) return;
+        const last = moves.pop();
+        board[last.idx] = '';
+        const cell = boardEl.querySelector(`[data-i='${last.idx}']`);
+        cell.querySelector('.mark').textContent = '';
+        // set current back to the player who made the undone move
+        current = last.player;
+        currentEl.textContent = current;
+        updateStatus('Move undone')
+      });
+
+      // keyboard support: 1-9 to play cells
+      window.addEventListener('keydown', (e)=>{
+        if(over) return;
+        const key = e.key;
+        if(/^[1-9]$/.test(key)){
+          const idx = Number(key)-1;
+          const el = boardEl.querySelector(`[data-i='${idx}']`);
+          if(el) el.click();
+        }
+      });
+
+      // init
+      createBoard();
+
+    })();
+  </script>
+</body>
+</html>
